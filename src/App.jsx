@@ -8,7 +8,8 @@ const col = (letters) => {
   for (let i = 0; i < letters.length; i++) n = n * 26 + (letters.charCodeAt(i) - 64);
   return n - 1;
 };
-const clean = (v) => String(v ?? '').replace(/ /g, '').replace(/\s/g, '').replace(/-/g, '');
+// Strip Unicode replacement char (�) and non-breaking spaces, then remove whitespace/dashes
+const clean = (v) => String(v ?? '').replace(/�/g, '').replace(/ /g, '').replace(/\s/g, '').replace(/-/g, '');
 const trimUpper = (v) => String(v ?? '').trim().toUpperCase();
 const commodity = (v) => {
   const c = trimUpper(v);
@@ -36,7 +37,8 @@ const fmtDate = (v) => {
   const dd = String(d.getDate()).padStart(2, '0');
   return `${mm}/${dd}/${d.getFullYear()}`;
 };
-const trimStr = (v) => String(v ?? '').replace(/ /g, ' ').trim();
+// Strip Unicode replacement char and non-breaking spaces, then trim
+const trimStr = (v) => String(v ?? '').replace(/�/g, '').replace(/ /g, ' ').trim();
 
 // ---------- validation helpers ----------
 const findDuplicateImportIds = (rows, templateName) => {
@@ -114,10 +116,9 @@ const processWorkbook = (wb) => {
   const isXfr = (r) => trimUpper(g(r,'D')) === 'TRANSFER';
   const isCommodity = (r) => isCornOrBeans(r, g);
 
-  // Count excluded rows for reporting
   const excludedCommodity = dataRows.filter(r => !isCommodity(r)).length;
 
-  // ---- Inbound (INBOUND + REGULAR + corn/soybeans) ----
+  // ---- Inbound ----
   const inbound = dataRows.filter(r => isIn(r) && isReg(r) && isCommodity(r)).map(r => ({
     import_id: clean(g(r,'G')) + clean(g(r,'F')) + clean(g(r,'BV')),
     type: commodity(g(r,'O')),
@@ -131,7 +132,7 @@ const processWorkbook = (wb) => {
     target_enterprise_id: 'grain-coop',
   }));
 
-  // ---- Outbound (OUTBOUND + REGULAR + corn/soybeans) ----
+  // ---- Outbound ----
   const outbound = dataRows.filter(r => isOut(r) && isReg(r) && isCommodity(r)).map(r => ({
     import_id: clean(g(r,'G')) + clean(g(r,'F')) + clean(g(r,'BV')),
     type: commodity(g(r,'O')),
@@ -146,7 +147,7 @@ const processWorkbook = (wb) => {
     target_name: trimStr(g(r,'J')),
   }));
 
-  // ---- Internal Transfer (OUTBOUND + TRANSFER + corn/soybeans, matched via BOL) ----
+  // ---- Internal Transfer (matched via BOL) ----
   const bolMap = {};
   dataRows.filter(r => isIn(r) && isXfr(r) && isCommodity(r)).forEach(r => {
     const bol = trimUpper(g(r,'W'));
@@ -186,7 +187,7 @@ const processWorkbook = (wb) => {
     };
   });
 
-  // ---- External Partner Transfer (OUTBOUND + REGULAR + corn/soybeans → ext-partner) ----
+  // ---- External Partner Transfer ----
   const extTransfer = dataRows.filter(r => isOut(r) && isReg(r) && isCommodity(r)).map(r => {
     const bolRaw = g(r,'W');
     const bolClean = bolRaw ? String(bolRaw).trim() : '';
@@ -240,10 +241,7 @@ const processWorkbook = (wb) => {
     ...findMissingFields(extTransfer,      'External Partner Transfer',   extReq),
   ];
 
-  // Summarize by category — always include Duplicate Import ID even if 0
-  const warningSummary = {
-    'Duplicate Import ID': { count: 0, templates: {} },
-  };
+  const warningSummary = { 'Duplicate Import ID': { count: 0, templates: {} } };
   allWarnings.forEach(w => {
     if (!warningSummary[w.category]) warningSummary[w.category] = { count: 0, templates: {} };
     warningSummary[w.category].count++;
@@ -251,12 +249,11 @@ const processWorkbook = (wb) => {
     warningSummary[w.category].templates[w.template]++;
   });
 
-  // Unique import_id counts per template
   const uniqueIds = {
-    Inbound:                    new Set(inbound.map(r => r.import_id).filter(Boolean)).size,
-    Outbound:                   new Set(outbound.map(r => r.import_id).filter(Boolean)).size,
-    'Internal Transfer':        new Set(transfer.map(r => r.import_id).filter(Boolean)).size,
-    'External Partner Transfer':new Set(extTransfer.map(r => r.import_id).filter(Boolean)).size,
+    Inbound:                     new Set(inbound.map(r => r.import_id).filter(Boolean)).size,
+    Outbound:                    new Set(outbound.map(r => r.import_id).filter(Boolean)).size,
+    'Internal Transfer':         new Set(transfer.map(r => r.import_id).filter(Boolean)).size,
+    'External Partner Transfer': new Set(extTransfer.map(r => r.import_id).filter(Boolean)).size,
   };
   const totalUniqueIds = Object.values(uniqueIds).reduce((a, b) => a + b, 0);
 
@@ -296,7 +293,6 @@ const todayStamp = () => {
   return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
 };
 
-// ---------- Warning category config ----------
 const WARN_CATEGORY_CONFIG = {
   'Duplicate Import ID': { icon: Copy,          color: 'red',    bg: 'bg-red-50',    border: 'border-red-200',    text: 'text-red-700',    badge: 'bg-red-100 text-red-800' },
   'Invalid Quantity':    { icon: Hash,           color: 'orange', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', badge: 'bg-orange-100 text-orange-800' },
@@ -305,7 +301,6 @@ const WARN_CATEGORY_CONFIG = {
   'BOL Blank':           { icon: Info,           color: 'blue',   bg: 'bg-blue-50',   border: 'border-blue-200',   text: 'text-blue-700',   badge: 'bg-blue-100 text-blue-800' },
 };
 
-// ---------- UI ----------
 export default function GrainElevatorTransformer() {
   const [state, setState] = useState('idle');
   const [result, setResult] = useState(null);
@@ -350,22 +345,18 @@ export default function GrainElevatorTransformer() {
   };
 
   const tabs = result ? [
-    { id: 'inbound',     label: 'Inbound',                  count: result.inbound.length,     cols: IN_COLS,   rows: result.inbound,     file: `IN_SCALE_TICKET_${todayStamp()}.csv` },
-    { id: 'outbound',    label: 'Outbound',                 count: result.outbound.length,    cols: OUT_COLS,  rows: result.outbound,    file: `OUT_SCALE_TICKET_${todayStamp()}.csv` },
-    { id: 'transfer',    label: 'Internal Transfer',        count: result.transfer.length,    cols: XFER_COLS, rows: result.transfer,    file: `TRANSFER_INTERNAL_${todayStamp()}.csv` },
-    { id: 'extTransfer', label: 'Ext. Partner Transfer',   count: result.extTransfer.length, cols: EXT_COLS,  rows: result.extTransfer, file: `TRANSFER_EXT_PARTNER_${todayStamp()}.csv`, accent: true },
+    { id: 'inbound',     label: 'Inbound',               count: result.inbound.length,     cols: IN_COLS,   rows: result.inbound,     file: `IN_SCALE_TICKET_${todayStamp()}.csv` },
+    { id: 'outbound',    label: 'Outbound',              count: result.outbound.length,    cols: OUT_COLS,  rows: result.outbound,    file: `OUT_SCALE_TICKET_${todayStamp()}.csv` },
+    { id: 'transfer',    label: 'Internal Transfer',     count: result.transfer.length,    cols: XFER_COLS, rows: result.transfer,    file: `TRANSFER_INTERNAL_${todayStamp()}.csv` },
+    { id: 'extTransfer', label: 'Ext. Partner Transfer', count: result.extTransfer.length, cols: EXT_COLS,  rows: result.extTransfer, file: `TRANSFER_EXT_PARTNER_${todayStamp()}.csv`, accent: true },
     ...(result.warnings.length ? [{ id: 'warnings', label: 'Warnings', count: result.warnings.length, cols: WARN_COLS, rows: result.warnings, file: `WARNINGS_${todayStamp()}.csv`, warn: true }] : []),
   ] : [];
 
   const activeTabObj = tabs.find(t => t.id === activeTab);
   const extMissingBol = result ? result.extTransfer.filter(r => !r['target.ticket_number']).length : 0;
-
-  // Filtered warnings for table display
   const filteredWarnings = result && result.warnings
     ? (warnFilter === 'all' ? result.warnings : result.warnings.filter(w => w.category === warnFilter))
     : [];
-
-  const totalIncluded = result ? result.inbound.length + result.outbound.length + result.transfer.length + result.extTransfer.length : 0;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -398,10 +389,8 @@ export default function GrainElevatorTransformer() {
             >
               Choose file
             </button>
-            <input
-              ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden"
-              onChange={(e) => handleFile(e.target.files?.[0])}
-            />
+            <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden"
+              onChange={(e) => handleFile(e.target.files?.[0])} />
           </div>
         )}
 
@@ -453,7 +442,7 @@ export default function GrainElevatorTransformer() {
               </div>
             </div>
 
-            {/* Warnings dashboard — always shown */}
+            {/* Warnings dashboard */}
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               {Object.entries(result.warningSummary).map(([cat, data]) => {
                 const isClean = cat === 'Duplicate Import ID' && data.count === 0;
@@ -462,8 +451,7 @@ export default function GrainElevatorTransformer() {
                   : (WARN_CATEGORY_CONFIG[cat] || WARN_CATEGORY_CONFIG['Missing Field']);
                 const Icon = cfg.icon;
                 return (
-                  <button
-                    key={cat}
+                  <button key={cat}
                     onClick={() => { if (data.count > 0) { setActiveTab('warnings'); setWarnFilter(warnFilter === cat ? 'all' : cat); } }}
                     className={`${cfg.bg} ${cfg.border} border rounded-lg p-3 text-left transition-all ${data.count > 0 ? 'hover:shadow-sm cursor-pointer' : 'cursor-default'} ${warnFilter === cat && activeTab === 'warnings' ? 'ring-2 ring-offset-1 ring-slate-400' : ''}`}
                   >
@@ -500,8 +488,7 @@ export default function GrainElevatorTransformer() {
             <div className="mt-4 bg-white rounded-xl border border-slate-200 overflow-hidden">
               <div className="border-b border-slate-200 flex items-center overflow-x-auto">
                 {tabs.map(t => (
-                  <button
-                    key={t.id}
+                  <button key={t.id}
                     onClick={() => { setActiveTab(t.id); if (t.id !== 'warnings') setWarnFilter('all'); }}
                     className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === t.id
                       ? (t.warn ? 'border-amber-500 text-amber-700' : t.accent ? 'border-indigo-500 text-indigo-700' : 'border-slate-900 text-slate-900')
@@ -513,9 +500,7 @@ export default function GrainElevatorTransformer() {
                       t.warn ? 'bg-amber-100 text-amber-800' :
                       t.accent ? 'bg-indigo-100 text-indigo-700' :
                       'bg-slate-100 text-slate-600'
-                    }`}>
-                      {t.count}
-                    </span>
+                    }`}>{t.count}</span>
                   </button>
                 ))}
                 <div className="ml-auto pr-4 shrink-0">
@@ -530,24 +515,19 @@ export default function GrainElevatorTransformer() {
                 </div>
               </div>
 
-              {/* Warning filter pills (shown when Warnings tab active) */}
+              {/* Warning filter pills */}
               {activeTab === 'warnings' && result.warnings.length > 0 && (
                 <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2 overflow-x-auto">
                   <span className="text-xs text-slate-500 shrink-0">Filter:</span>
-                  <button
-                    onClick={() => setWarnFilter('all')}
-                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${warnFilter === 'all' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
-                  >
+                  <button onClick={() => setWarnFilter('all')}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${warnFilter === 'all' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>
                     All ({result.warnings.length})
                   </button>
                   {Object.entries(result.warningSummary).map(([cat, data]) => {
                     const cfg = WARN_CATEGORY_CONFIG[cat] || WARN_CATEGORY_CONFIG['Missing Field'];
                     return (
-                      <button
-                        key={cat}
-                        onClick={() => setWarnFilter(warnFilter === cat ? 'all' : cat)}
-                        className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${warnFilter === cat ? cfg.badge : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
-                      >
+                      <button key={cat} onClick={() => setWarnFilter(warnFilter === cat ? 'all' : cat)}
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${warnFilter === cat ? cfg.badge : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>
                         {cat} ({data.count})
                       </button>
                     );
