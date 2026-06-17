@@ -1,14 +1,27 @@
 # Grain Elevator Data Transformer
 
-A browser-based tool that converts raw scale ticket reports (Excel) into Balance API–ready CSVs — no server, no upload, all processing happens locally in the browser.
+A browser-based tool that converts raw scale ticket reports (Excel) into Balance API–ready CSVs. No server, no data upload — all processing happens locally in your browser.
 
-**Live demo:** [your-app.netlify.app](https://your-app.netlify.app) *(update after deploying)*
+**Live demo:** [grain-elevator-data-transformer.netlify.app](https://grain-elevator-data-transformer.netlify.app/)
 
 ---
 
-## What it does
+## Try it out
 
-Upload an `.xlsx` or `.xls` scale ticket report and the tool produces four ready-to-import CSVs:
+A sample file is included in the repo for testing:
+
+1. Go to [grain-elevator-data-transformer.netlify.app](https://grain-elevator-data-transformer.netlify.app/)
+2. Download [`public/dummy_ticket_report.xlsx`](./public/dummy_ticket_report.xlsx)
+3. Drop it into the app or click **Choose file**
+4. Review the output tabs and download your CSVs
+
+The sample file contains anonymized grain elevator data (477 rows) covering inbound, outbound, internal transfers, and external partner transfers across fictional co-op locations.
+
+---
+
+## What it produces
+
+Upload an `.xlsx` or `.xls` scale ticket report and the tool outputs up to five files:
 
 | Output file | Contents |
 |---|---|
@@ -16,23 +29,23 @@ Upload an `.xlsx` or `.xls` scale ticket report and the tool produces four ready
 | `OUT_SCALE_TICKET_YYYYMMDD.csv` | Outbound regular tickets (corn + soybeans) |
 | `TRANSFER_INTERNAL_YYYYMMDD.csv` | Internal co-op transfers (BOL-matched) |
 | `TRANSFER_EXT_PARTNER_YYYYMMDD.csv` | External partner transfers |
-| `WARNINGS_YYYYMMDD.csv` | Data quality issues (if any) |
+| `WARNINGS_YYYYMMDD.csv` | Data quality issues, if any |
 
-It also surfaces a live warnings dashboard for: duplicate import IDs, missing required fields, invalid quantities, and unmatched/blank BOL numbers.
+Non-corn/soybean rows are excluded automatically. The warnings dashboard flags duplicate import IDs, missing required fields, invalid quantities, and unmatched or blank BOL numbers.
 
 ---
 
 ## Configuration
 
-Two enterprise IDs are set as defaults in `src/App.jsx`. Swap them for your actual IDs before deploying:
+Enterprise IDs default to generic placeholders in `src/App.jsx`. Swap them for your actual IDs before deploying:
 
 ```js
-// Co-op enterprise ID (used on inbound/outbound and as source on transfers)
-target_enterprise_id: 'grain-coop'   // → replace with your enterprise ID
+// Co-op enterprise ID
+target_enterprise_id: 'grain-coop'      // → your enterprise ID
 
-// External partner enterprise ID
-'target.enterprise_id': 'ext-partner'  // → replace with your partner's ID
-'target.id': 'ext-partner-01'          // → replace with your partner's location ID
+// External partner enterprise ID and location
+'target.enterprise_id': 'ext-partner'   // → partner's enterprise ID
+'target.id': 'ext-partner-01'           // → partner's location ID
 ```
 
 ---
@@ -52,15 +65,13 @@ Open [http://localhost:5173](http://localhost:5173).
 
 ## Deploy to Netlify
 
-### Option A — Netlify UI (easiest)
+### Option A — Netlify UI
 
 1. Push this repo to GitHub.
 2. Go to [netlify.com](https://netlify.com) → **Add new site → Import an existing project**.
-3. Connect your GitHub account and select this repo.
-4. Build settings are auto-detected from `netlify.toml`:
-   - **Build command:** `npm run build`
-   - **Publish directory:** `dist`
-5. Click **Deploy site**. Done.
+3. Connect GitHub and select this repo.
+4. Build settings are auto-detected from `netlify.toml` (`npm run build` / `dist`).
+5. Click **Deploy site**.
 
 ### Option B — Netlify CLI
 
@@ -72,12 +83,13 @@ netlify deploy --prod --dir=dist
 
 ---
 
-## Push to GitHub (first time)
+## Push to GitHub
 
 ```bash
 git init
 git add .
 git commit -m "Initial commit"
+git branch -M main
 git remote add origin https://github.com/fpineiro23/grain-elevator-data-transformer.git
 git push -u origin main
 ```
@@ -91,4 +103,4 @@ git push -u origin main
 - [SheetJS (xlsx)](https://sheetjs.com/) — client-side Excel parsing
 - [Lucide React](https://lucide.dev/) — icons
 
-All file processing is done entirely in the browser — no data leaves the user's machine.
+All file processing runs entirely in the browser. No data is sent to any server.
